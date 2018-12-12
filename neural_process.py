@@ -35,7 +35,7 @@ class Encoder(torch.nn.Module):
     
     
     
-### from r to z_mean, z_logvar
+# From r to z_mean, z_logvar
 class Zparams(torch.nn.Module):
     def __init__(self, r_dim, z_dim):
         super().__init__()
@@ -83,7 +83,7 @@ class Decoder(torch.nn.Module):
         return y_target_mean, y_target_constant_std
     
 
-#splits the dataset randomly
+# Splits the dataset randomly
 def randsplit_totensor(x, y, n_context):
     index = np.arange(x.shape[0])
     mask = np.random.choice(index, size=n_context, replace=False)
@@ -94,7 +94,7 @@ def randsplit_totensor(x, y, n_context):
     return x_context, y_context, x_target, y_target
 
 
-### Generate samples from z ###
+# Generate samples from z
 def sample_z(z_mean, z_logvar, how_many):
     """
     Returns a sample from z of size (how_many, z_dim)
