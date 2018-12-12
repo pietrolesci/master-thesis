@@ -125,3 +125,4 @@ def KL_div(mu_q, std_q, mu_p, std_p):
     ps2 = std_p**2 + 1e-16
     
     return (qs2/ps2 + ((mu_q-mu_p)**2)/ps2 + torch.log(ps2/qs2) - 1.0).sum()*0.5
+
