@@ -1,0 +1,237 @@
+In the previous chapter we reviewed the application of Bayesian methods to solving inference problems in neural networks. In this chapter we approach the problem from a different perspective. 
+
+
+\textit{Deep Bayesian Learning} refers to the application of deep learning to Bayesian methods. In practical terms, deep neural nets can be used to parameterize distributions, allowing to capture richer characteristics of the data improving inference. To make this approach feasible, a series of innovations in the context of approximate inference have been proposed in recent years and the literature in this field is flourishing.
+
+To apply deep learning to to Bayesian inference techniques, in particular to variational inference, a series of improvements [\cite{Kingma2013, Rezende2014, Blundell2015, Gal2015, Gal2016, Hoffman2013, Ranganath2014}] have been proposed to overcome the limitations outlined in the previous chapter. 
+
+As we outlined at the end of the chapter 2, classical VI suffers three major drawbacks that can summarized as follows:
+\begin{itemize}
+    \item It does not scale well to large datasets
+    \item It is restricted to a limited class of variational distributions
+\end{itemize}
+These issues will be addressed in the next sections. Notice that the KL term of the ELBO is usually not a concern in practical applications and, often, the distributions involved are chosen in a way to make this term have an analytical expression.
+
+
+
+\section{Scalable VI: Stochastic Variational Inference}
+To make VI tractable for more complex models like deep neural nets, VI is combined with stochastic optimization: \textit{stochastic variational inference} (SVI) uses stochastic gradient descent (SGD) to scale VI to large datasets. It was originally proposed by [\cite{Hoffman2013}]. 
+
+As we have seen in chapter 2 for general loss functions, for many models of interest also the variational objective has a special structure, namely, it is the sum over contributions from all $N$ individual data points
+$$\mathrm{ELBO}(x,\theta,\phi) = \sum_{i=1}^{N} \mathrm{ELBO}(x_i, \theta, \phi)$$
+Problems of this type can be solved efficiently using stochastic optimization. Therefore, to apply stochastic optimization we have to assess that both the model and the variational distribution have some conditional independence structure that we can take advantage of. The most common case is the one in which the observations are conditionally independent given the latent variables, hence the log-likelihood term in the ELBO -- for clarity we omit the dependence on $\theta$ -- can be approximated with 
+$$\mathrm{ELBO}(x,\theta,\phi) \approx \frac{N}{M}\sum_{\mathcal{I}_M} \mathrm{ELBO}(x_i, \theta, \phi)$$
+where $I_M$ is a mini-batch of indices in $I = \{1,\dots,i,\dots,N\}$ of size $M$ with $M<N$. In other words, we can cheaply obtain noisy estimates of the gradient by subsampling the data and computing a scaled gradient on the subsample. If we sample independently then the expectation of this noisy gradient is equal to the true gradient. The problem is now cast has a pure optimization problem: all properties discussed in chapter 2 apply. 
+
+To maximize the ELBO using this approximation, we would like to take gradient steps in the parameter space $\{\theta, \phi\}$, that is, we need to be able to compute unbiased estimates of
+$$\nabla_{\theta,\phi} \mathrm{ELBO} (x, \theta, \phi) = \nabla_{\theta,\phi} \mathrm{E}_{z\sim q_\phi(z)}\left[\log p_\theta(z, x) - \log q_\phi(z)\right]$$
+where we have made explicit that the expectations are computed with respect to $q$. Computing this gradient could be difficult if the ELBO does not have a \say{nice} analytical form. Variational inference was originally limited to conditionally conjugate models, for which the ELBO could be computed analytically before it was optimized [\cite{Hoffman2013}]. In the next section, we introduce methods that relax this requirement and simplify inference. Central to this section are stochastic gradient estimators of the ELBO that can be computed for a broader class of models without requiring its the direct evaluation.
+
+
+
+
+\section{Generic VI: Black-Box VI}\label{sec:generic VI}
+In classical VI, the ELBO is first derived analytically, and then optimized. For many models, including Bayesian deep learning architectures or complex hierarchical models, the ELBO contains intractable expectations with no known or simple analytical solution. Even if an analytic solution is available, the analytical derivation of the ELBO often requires time and mathematical expertise.
+
+\textit{Black box variational inference} (BBVI) removes the need for an analytic expression of the ELBO -- this explains the origin of its name. It proposes a generic inference algorithm for which only the generative process of the data has to be specified. 
+
+The main idea is to represent the gradient as an expectation, and to use Monte Carlo techniques to estimate this expectation. The key insight of BBVI is that one can obtain an unbiased gradient estimator by sampling from the variational distribution without having to compute the ELBO analytically [\cite{Paisley2012}]. The goal of using Monte Carlo (MC) estimation in variational inference to estimate the expected log-likelihood is only useful if we are then able to compute the expected log-likelihood derivative with respect to $\theta$ and $\phi$. There exist two main techniques for MC estimation in the VI literature\footnote{A brief survey of the literature can be found in [\cite{Schulman2015}] and in [\cite{Zhang2017}]}: 
+\begin{itemize}
+    \item Score function gradient [\cite{Ranganath2014, Mnih2014}]
+    \item Reparameterization gradient [\cite{Kingma2013, Rezende2014}]
+\end{itemize}
+These have very different characteristics and variances for the estimation of the expected log-likelihood and its derivative -- a thorough analysis of the variances can be found in [\cite{Gal2016}]. Thus, how do we apply variational inference to general stochastic functions and general variational distributions? 
+
+
+
+
+
+\subsection{Score Function Gradient}
+We will form the derivative of the objective as an expectation with respect to the variational
+distribution and then sample from the variational approximation to get noisy but unbiased gradients, which
+we use to update our parameters. For each sample, our noisy gradient requires evaluating 
+\begin{itemize}
+    \item The joint distribution of the observed and latent variables
+    \item The variational distribution
+    \item The gradient of the log of the variational distribution
+\end{itemize}
+This is a black box method since it can be derived once for each type of variational distribution and reused for many models and applications. 
+
+This MC approximation method is also known as a \textit{likelihood ratio estimator} and \textit{REINFORCE} in the literature and relies on the identity $\frac{\partial}{\partial \nu} f_\nu(u) = f_\nu(u)\frac{\partial}{\partial \nu} \log f_\nu(u)$. In what follows, to have a clearer notation, we denote 
+\begin{equation}\label{eq:convention}
+    f_{\theta, \phi}(z) \stackrel{\scriptscriptstyle def}{=} \log p_\theta(z, x) - \log q_\phi(z)
+\end{equation}
+so that $\mathrm{ELBO} = \mathrm{E}[f_{\theta, \phi}(z)]$. For clarity, we discard all subscripts in the derivation below. We begin by expanding the gradient of interest as
+\begin{align*}
+    \nabla \mathrm{E}[f(z)] &= \nabla \int q(z) f(z) \; dz\\
+    &= \int \Big(\nabla q(z)\Big) f(z) + q(z) \Big(\nabla f(z)\Big) \; dz\\
+    \intertext{The problem is that, although we know how to generate samples from $q(\cdot)$, we have troubles computing the expectation with respect to $\nabla q(z)$. We use the identity presented above and write}
+    &= \int q(z)\Big(\nabla \log q(z)\Big) f(z) + q(z) \Big(\nabla f(z)\Big) \; dz \\
+    &= \int q(z)\left[\Big(\nabla \log q(z)\Big) f(z) + \Big(\nabla f(z)\Big)\right] \; dz \\
+    \intertext{to finally obtain}
+    &= \mathrm{E} \left[\Big(\nabla \log q(z)\Big) f(z) + \Big(\nabla f(z)\Big)\right]
+\end{align*}
+Crucially, the gradient has been moved inside the expectation. Therefore, the gradient with respect to the model parameters $\theta$ is straightforward
+\begin{equation*}
+    \nabla_{\theta} \mathrm{ELBO} = \mathrm{E}[\nabla_{\theta} \log p_\theta(z, x)]
+\end{equation*}
+The corresponding gradient with respect to the variational parameters is somewhat more involved and requires the use of the identity above\footnote{For a complete derivation consult [\cite{Ranganath2014}] appendix A.}
+$$\nabla_{\phi} \mathrm{ELBO} = \mathrm{E}\left[\nabla_{\phi} \log q_\phi(z) \; \left(\log p_\theta(x, z) - \log q_\phi(z)\right)\right]$$
+As both gradients involve expectations which are intractable, we can use Monte Carlo approximation using samples from the variational distribution. Generating $S$ samples $z^{(1)}, \dots, z^{(s)}$ from $q_\phi(z)$, we can compute
+\begin{align}\label{eq:score}
+    \widehat{\nabla_{\theta} \mathrm{ELBO}}(x,\theta,\phi) &\approx \frac{1}{S} \sum_{s=1}^{S} \nabla_{\theta} \log p_\theta\left(x, z^{(s)}\right)\\\nonumber
+    \widehat{\nabla_{\phi} \mathrm{ELBO}}(x,\theta,\phi) &\approx \frac{1}{S} \sum_{s=1}^{S} \nabla_{\phi} \log q_\phi\left(z^{(s)}\right) \; \left(\log p_\theta\left(x, z^{(s)}\right) - \log q_\phi\left(z^{(s)}\right)\right)
+\end{align}
+In this way, we have specified a Monte Carlo estimator for the ELBO that does not require to compute it. We only need to be able to generate from the variational distribution and the joint ditribution of latents and observations.
+
+
+
+\subsection{Reparametrization Gradient} \label{sec:reparametrization}
+An alternative to the score function gradients are the so-called reparametrization gradients. These gradients are obtained by representing the variational distribution as a \textit{deterministic parametric} transformation of a noise distribution. Empirically, reparametrization gradients are often found to have lower variance than score function gradients, however, they are less generally applicable since we have to be able to reparametrize the variational distribution.
+
+The \textit{reparameterization trick} -- as it is also known in the machine learning literature -- allows to estimate the gradient of the ELBO by Monte Carlo samples by representing random variables, $z$, as deterministic functions of noise distributions. This allows to compute stochastic gradients for a large class of models without having to compute analytic expectations. In particular, if we are able to rewrite random variable $z$ distributed according to $q_\phi(z)$ as a transformation of a random variable $\varepsilon \sim p(\varepsilon)$, a noise distribution such as uniform or Gaussian, we can compute any expectation over $z$ as an expectation over $\varepsilon$\footnote{For example, if $z \sim \mathcal{N}(\mu, \sigma^2)$, then $z = \mu + \sigma\varepsilon$, for $\varepsilon\sim\mathcal{N}(0, I)$.}.
+
+More generally, to apply this method we need to be able to write $z = g(\varepsilon, \phi)$ for a deterministic parametric and differentiable function $g$. The noise distribution $p(\varepsilon)$ must not depend on the variational parameters. Therefore $q_\phi(z)$ and $g(\varepsilon, \phi)$ share the same parameters $\phi$. This allows to compute any expectation over $z$ as an expectation over $\varepsilon$ by the theory behind the change of variables in integrals, since following this process generating $z$ from $g$ is equivalent to directly drawing it from the original distribution.
+
+Using the same notation as in eq. \eqref{eq:convention}, we can rewrite the the gradient as follows
+\begin{align*}
+    \nabla_{\theta,\phi} \mathrm{ELBO} &= \nabla_{\theta,\phi} \mathrm{E}_{q_\phi(z)}\left[f_{\theta,\phi}(z)\right]\\
+    &= \mathrm{E}_{p(\varepsilon)}\left[\nabla_{\theta,\phi} f_{\theta,\phi}\big(g(\varepsilon, \phi)\big)\right]
+\end{align*}
+Now the expectation is with respect to $p(\varepsilon)$. Again, crucially, the gradient has been shifted inside the expectation. Therefore, the Monte Carlo estimator for the ELBO \textit{evaluated in a single observation} $x_i$, unlike eq. \eqref{eq:score}, can be computed generating $S$ samples $\varepsilon^{(1)}, \dots, \varepsilon^{(s)}$ from $p(\varepsilon)$, and using the following approximation
+$$\widehat{\nabla_{\theta,\phi} \mathrm{ELBO}}(x_i, \theta, \phi) \approx \frac{1}{S} \sum_{s=1}^{S} \nabla_{\theta,\phi} \left[ \log p_\theta\big(x_i, g(\varepsilon_s, \phi)\big) - \log q_\phi\big(g(\varepsilon_s, \phi)\big) \right]$$
+Again, in this way we get around the obstacle of evaluating the ELBO explicitly, we only need to be able to generate from $p$ and $q$. In other words, the estimator only depends on samples from $p(\varepsilon)$ which is not influenced by $\phi$, therefore the estimator can be differentiated with respect to $\phi$.
+
+An fully Bayesian extension of this approach regards the estimation of the parameters $\theta$ via variational inference, not just maximum likelihood. We assign a hyperprior to $\theta$ as well. The model becomes
+\begin{align*}
+    \theta &\sim p_\alpha(\theta)\\
+    x_i, z_i | \theta &\sim p(x, z | \theta)
+\end{align*}
+where the distribution of $\theta$ is governed by the hyperparameters $\alpha$. We want to compute the posterior of $\theta$ given the data, that is $p(\theta|x) = p(x|\theta)p(\theta)/p(x)$, as well as the posterior of $z$ given the data, that is $p(z|x, \theta)$. We use variational inference to approximate both posteriors. %Therefore, we define an approximate distribution $q_\eta(\theta)$ and we minimize 
+%\begin{align*}
+%    \mathrm{KL}[q_\eta(\theta)\Vert p_\alpha(\theta|x)] &= \mathrm{E}[\log q_\eta(\theta) - \log %p_\alpha(\theta|x)]\\
+%    &= \mathrm{E}[\log q_\eta(\theta) - \log p_\alpha(x|\theta) - \log p_\alpha(\theta) + \log p_\alpha(x)]
+%\end{align*}
+%Therefore, we can define the following ELBO
+%$$\mathrm{ELBO}(x, \eta) = \log p_\alpha(x|\theta) - \mathrm{KL}[q_\eta(\theta)\Vert p_\alpha(\theta)]$$
+%as we did for the latent variable. Again, we want to compute the posterior of the latent given the %observation, that is $p(z|x, \theta) = p(x|z, \theta)p(z|\theta)/p(x|\theta)$. We use variational inference %to approximate this posterior. Therefore, we define an approximate distribution $q_\phi(z|\theta)$ and we %minimize $\mathrm{KL}[q_\phi(z)\Vert p_\theta(z|x,\theta)]$.
+%The ELBO is defined as
+%$$\mathrm{ELBO}(x, \phi, \theta) = \log p_\theta(x|z,\theta) - \mathrm{KL}[q_\phi(z)\Vert p(z|\theta)]$$
+%We can now use the reparametrization trick for both $z$ and $\theta$
+%\begin{align*}
+%    z = g(\varepsilon, \phi), \qquad \varepsilon\sim p(\varepsilon)\\
+%    \theta = h(\nu, \eta), \qquad \nu\sim p(\nu)
+%\end{align*}
+It can be shown [\cite{Kingma2013}] that the resulting ELBO is the following
+$$\mathrm{ELBO}(x,\theta,\phi) = \log p(x|z, \theta) - \mathrm{KL}[q_\phi(z)\Vert p(z|\theta)] - \mathrm{KL}[q_\phi(\theta)\Vert p_\alpha(\theta)]$$
+The reparametrization trick can be applied to both $z$ and $\theta$, following the same path showed above.
+
+
+
+
+\subsection{Structured VI: Beyond Mean-Field family}
+The methods we have exposed above usually addresses the standard mean-field variational inference (MFVI) setup and employs the KL divergence as a measure of distance between distributions.
+
+Mean-field methods were first adopted in neural networks by Anderson and Peterson in 1987 [\cite{Zhang2017}], and later gained popularity in the machine learning community [\cite{Jordan1999}]. The main limitation of mean-field approximations is that they explicitly ignore correlations between different latent variables, indeed, MFVI assumes a fully-factorized variational distribution. Fully factorized variational models have limited accuracy, especially when the latent variables are highly dependent such as in models with hierarchical structures. Allowing a structured variational distribution to capture dependencies between latent variables is a modeling choice; different dependencies may be more or less relevant and depend on the model under consideration.  
+
+For many models, the variational approximation can be made more expressive by maintaining dependencies between latent variables, but these dependencies make it harder to estimate the gradient of the variational bound. 
+
+In order to capture dependencies between latent variables, one starts with a mean-field variational distribution $\prod_i q(z_i|\phi)$\footnote{We made clear that $q(\cdot)$ is the conditional distribution of $z$ given $\phi$.}, but instead of assuming independence, one assumes conditional independence.  Consider the most general case in which each data point $x_i$ depends on a \textit{local} latent variable $z_i$ whose distribution is governed by the parameters $\phi_i$. In turn, the local latent variables $z_i$'s are \textit{conditionally independent} given a \textit{global} latent variable $v$. We can, thus, write
+$$q_\phi(z) = \int p(v) \prod_i q(z_i|v, \phi_i) \; dv$$
+In such a way, we can allow dependencies among the latent variables $z_i$'s.
+
+
+
+
+
+
+
+
+
+
+\section{Amortized VI}\label{sec:amortized}
+The term \textit{amortized} \say{inference} refers to utilizing inferences from past computations to support future computations [\cite{Ritchie2016}]. In the context of variational inference, amortized inference refers to inference over local variables. Usually, for each data point $x_i$ a \textit{local} latent variable $z_i$ is defined, whose parameters are $\phi_i$. This is true even when a structured VI approach is taken, the only difference being that such local latent variables are \textit{conditionally} independent. Traditional VI makes it necessary to optimize a $\phi_i$ for each data point $x_i$, which is computationally expensive, in particular when this optimization is embedded a global parameter update loop.
+
+Instead of approximating separate variables for each data point, amortized VI assumes that the local variational parameters can be predicted by a parameterized function of the data. Once this function is estimated, the latent variables can be acquired by passing new data points through the function. Deep neural networks used in this context are also called \textit{inference networks} [\cite{Kingma2013}]. Amortized VI with inference networks thus combines probabilistic modeling with the representational power of deep learning. 
+
+The basic idea behind amortized inference is to use a powerful predictor to predict the optimal $z_i$ based on the data $x_i$, i.e. $z_i = h_\xi(x_i)$. This way, the local variational parameters are replaced by a function of the data whose parameters are shared across all data points, i.e. inference is \textit{amortized}. 
+
+Consider, again, a model with global and local latent random variables and local variational parameters: 
+\begin{equation*}
+    p(x,z,v) = p(v)\prod_{i=1}^{N} p(x_i|z_i)p(z_i|v) \qquad q(z,v) = q(v)\prod_{i=1}^{N} q(z_i|v,\phi_i)
+\end{equation*}
+For small to medium-sized $N$ using local variational parameters like this can be a good approach. If $N$ is large, however, the fact that the space we are doing optimization over grows with $N$ is a crucial problem. One way to avoid the growth of variational parameters induced by the size of the dataset is to use \textit{amortization}.
+
+Instead of introducing local variational parameters, $\phi$, we learn a single parametric function $h(\cdot)$ and work with a variational distribution that has the form
+$$q(v)\prod_{i=1}^N q(z_i|h(x_i))$$
+The function $h(\cdot)$ maps a given observation to a set of variational parameters tailored to that data point and needs to be sufficiently rich to capture the posterior accurately, but now we can handle large datasets without having to introduce one variational parameter for each data point: the number of parameters involved is only equal to the number of parameters $xi$ parameterizing $h$. This approach has other benefits too: learning $h(\cdot)$ effectively allows us to share statistical power among different data points.
+
+
+
+
+
+\subsection{Example: Deep Latent Gaussian Models}\label{sec:vae}
+The model employs a multivariate normal prior from which we draw a latent variable $z$ from
+$$p(z) = \mathcal{N}\left(\mu_z, \Sigma_z\right)$$
+even though this could be an arbitrary prior.
+The likelihood of the model is
+$$p_\theta(x|z) = \prod_{i=1}^{N} \mathcal{N}\left(\mu(z_i), \sigma^2(z_i)\right)$$
+where $\mu(\cdot)$ and $\sigma^2(\cdot)$ are two nonlinear functions, usually neural nets. In this case, $\theta$ refers to the parameters of the network.
+
+
+
+\subsubsection*{Density Estimation: Variational Autoencoders} In the machine learning literature, variational autoencoders (VAE) refer to the application of amortized variational inference for making inference in deep latent Gaussian models. It is, perhaps, the simplest setup that realizes deep probabilistic modeling. 
+
+VAEs employ two deep sets of neural networks: a top-down generative model as described above, mapping from the latent variables $z$ to the data $x$, and a bottom-up inference model which approximates the posterior $p(z|x)$. Commonly, the corresponding neural networks are referred to as the \textit{generative network} and the \textit{recognition network}, or sometimes as \textit{decoder} and \textit{encoder} networks. 
+
+In order to approximate the posterior, VAEs employ an amortized mean-field variational distribution: 
+$$q_\phi(z|x) = \prod_{i=1}^{N} q_\phi(z_i|x_i)$$
+Notice that if we were not making use of amortization, we would introduce variational parameters $\{\phi_i\}$ for each data point $x_i$. Via amortization rather than introducing variational parameters, we instead learn a function that maps each $x_i$ to an appropriate $\phi_i$. Since we need this function to be flexible, we parameterize it as a neural network. Therefore, the conditioning on $x_i$ indicates that the local variational parameters associated with each data point are replaced by a function of the data. This amortized variational distribution is typically chosen as:
+$$q_\phi(z_i|x_i) = \mathcal{N}\left(\mu_z(x_i), \sigma^2_z(x_i)I\right)$$
+Similar to the generative model, the variational distribution employs nonlinear mappings $\mu_z$ and $\sigma^2_z$ of the data in order to predict the approximate posterior distribution. The parameter $\phi$ summarizes the corresponding neural network parameters.
+
+Given this setup of the variational inference problem, to perform stochastic optimization we apply the reparametrization trick outlined in section (\cref{sec:generic VI}). This setup was proposed in two independent seminal paper [\cite{Kingma2013}] and [\cite{Rezende2014}]. The process is the following.
+
+For each data point, we sample $S$ times $\varepsilon_{i,s}$ from a noise distribution $p(\varepsilon)$. We reparametrize the latent variable as $z_{i} = \mu_z(x_i) + \sigma(x_i)\varepsilon_{i,s}$, with $\mu_z$ and $\sigma_z$ parametrized by $\phi$. Therefore, we would obtain an $S$-dimensional vector of samples of the same $z_i$ where each component is denoted $z_{i,s}$. We can approximate the per-data point ELBO
+\begin{align*}
+    \mathrm{ELBO}(x_i,\theta,\phi) &= \log p_\theta(x_i|z_i) - \mathrm{KL}[q_\phi(z_i|x_i)\Vert p(z_i)]\\
+    \intertext{using the following Monte Carlo estimate}
+    \widehat{\mathrm{ELBO}}(x_i,\theta,\phi) &\approx \frac{1}{S}\sum_{s=1}^{S} \log p_\theta(x_i|z_{i,s}) - \mathrm{KL}[q_\phi(z_i|x_i)\Vert p(z_i)]
+\end{align*}
+This stochastic estimate of the ELBO can subsequently be differentiated with respect to $\theta$ and $\phi$ to obtain an estimate of the gradient. Notice that the KL divergence, in this setup, can be integrated analytically being computed between two Gaussian distributions.
+
+
+
+\subsubsection*{Regression: Conditional Variational Autoencoders} 
+The conditional variational autoencoder (CVAE) is a conditional directed graphical model used for regression tasks. Given an input $x$ and an output $y$, the aim is to create a model $p(y|x)$ which maximizes the probability of the observed data. Unlike VAE, there are three types of variables involved: input variables $x$, output variables $y$, and latent variables $z$. The setup is the following
+\begin{align*}
+    z &\stackrel{\scriptscriptstyle i.i.d.}{\sim} p(z)\\
+    y_i | x_i, z &\stackrel{\scriptscriptstyle ind}{\sim} p(y_i|x_i, z)
+\end{align*}
+The outputs are assumed normally distributed, as well as the latent variable. The location parameter of the output distribution is a deterministic function $m$ of $x$ and $z$ that we can learn from data and, in particular, it is a neural network. Hence, the generative model is
+$$p(z, y_{1:N}|x_{1:N}) = p(z)\prod_{i=1}^{N} \mathcal{N}\left(m(x_i, z), \sigma^2\right)$$
+
+Performing Bayesian inference, our aim is to compute the posterior over the latent variables $p(z|x, y)$ as well as the conditional marginal distribution $p_\theta(y|x)$. In doing so we perform variational inference. Therefore, we define a variational distribution, $q_\phi(z)$, and we minimize
+$$\mathrm{KL}[q_\phi(z)\Vert p(z|x,y)]$$
+As above, it is possible to deduce the ELBO
+$$\mathrm{ELBO} = \log p(y|x,z) - \mathrm{KL}[q_\phi(z)\Vert p(z|x)]$$
+where we assume $p(z|x) = p(z)$, that is $z$ is independent of $x$ when $y$ is unknown. To optimize this objective we use the reparametrization trick, expressing $z = \mu + \sigma \varepsilon$, for $\varepsilon\sim p(\varepsilon)$. Furthermore, we use amortization, that is
+$$q_\phi(z_i|x_i, y_i) = \mathcal{N}\left(\mu_z(x_i, y_i), \sigma^2_z(x_i, y_i)I\right)$$
+For each data point, we sample $S$ times $\varepsilon_{i,s}$ from a noise distribution $p(\varepsilon)$. Once we have $S$ $z_i$'s for each data point we can approximate the per-data point ELBO
+using the following Monte Carlo estimate
+$$\widehat{\mathrm{ELBO}}(x_i, y_i) \approx \frac{1}{S}\sum_{s=1}^{S} \log p_\theta(y_i|x_i, z_{i,s}) - \mathrm{KL}[q_\phi(z_i|x_i, y_i)\Vert p(z_i|x_i)]$$
+This stochastic estimate of the ELBO can subsequently be differentiated with respect to $\theta$ and $\phi$ to obtain an estimate of the gradient.
+
+Once we have the approximate posterior, we can compute the predictive marginal distribution of a new observation $y^*$ given a new input $x^*$
+$$p(y^*|x^*) = \int p(y^*|x^*, z) \; q(z|x,y) \; dz$$
+
+
+
+
+
+
+
+
+
+
+

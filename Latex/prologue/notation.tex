@@ -1,0 +1,52 @@
+\pagestyle{plain}
+
+\renewcommand\nomgroup[1]{%
+  \bigskip
+  \item[\bfseries
+  \ifstrequal{#1}{A}{Numbers and Arrays}{%
+  \ifstrequal{#1}{B}{Set and Graphs}{%
+  \ifstrequal{#1}{C}{Indexing}{%
+  \ifstrequal{#1}{D}{Linear Algebra Operations}{%
+  \ifstrequal{#1}{E}{Calculus}{%
+  \ifstrequal{#1}{F}{Probability and Information Theory}{
+  \ifstrequal{#1}{G}{Functions}{%
+  \ifstrequal{#1}{H}{Acronyms / Abbreviations}{%
+  \ifstrequal{#1}{I}{Datasets and Distributions}{}}}}}}}}}%
+]}
+\renewcommand{\nomlabel}[1]{\hfil #1\hfil}
+\renewcommand{\nomname}{Notation}
+\renewcommand{\nompreamble}{The next list describes several symbols that will be later used within the body of the document}
+
+
+
+\nomenclature[A]{$x$}{A deterministic quantity, vector or scalar}
+\nomenclature[A]{$A$}{A matrix or a random quantity, clarified by the context}
+\nomenclature[A]{$W$}{The weight matrix}
+\nomenclature[A]{$I$}{Identity matrix}
+\nomenclature[A]{$X$}{Training set (matrix with N rows, and D columns)}
+\nomenclature[A]{$L$}{Number of layers in the network or per-example loss function, clarified by the context}
+\nomenclature[A]{$N_{(test)}$}{Dimensionality of the test set}
+\nomenclature[A]{$N$}{Dimensionality of the training set}
+\nomenclature[A]{$Q$}{Input dimesionality}
+\nomenclature[A]{$D$}{Output dimesionality}
+
+\nomenclature[B]{$\mathbb{R}$}{The set of real numbers}
+\nomenclature[B]{$\{0, 1, \dots, n\}$}{The set of all integers between 0 and $n$}
+
+\nomenclature[C]{$a_i$}{Element $i$ of deterministic or random vector $a$, with indexing starting at 1}
+\nomenclature[C]{$A_{ij}$}{Element $i,j$ of matrix $A$}
+\nomenclature[C]{$A_{i,:}$}{Row $i$ of matrix $A$}
+\nomenclature[C]{$A_{:,i}$}{Column $i$ of matrix $A$}
+
+\nomenclature[H]{$i.i.d.$}{Independent and identically distributed}
+\nomenclature[H]{DL}{Deep Learning}
+\nomenclature[H]{DNN}{Deep Neural Network}
+
+
+% \renewcommand{\nompostamble}{Throughout the thesis, if not specified otherwise, we denote a generic input variable by the symbol $X$. If $X$ is a vector, its components can be accessed by subscripts $X_d$. A generic output variable is denoted by $Y$.\\
+% We use uppercase letters such as $X, Y$ when referring generically to a variable, in the corpus of the text, or to a random variable, in formulae. Observed values are always written in lowercase, hence the $i$th observed value of $X$ is written as $x_i$ (where $x_i$ is again a scalar or vector). \\
+% Matrices are always represented by uppercase letters such as $X$; for example, a set of $N$ input vectors of dimension $Q$, $\{x_i\}_{i = 1}^{N}$ would be represented by the $N \times Q$ matrix $X$, also known as \textbf{design matrix}. In general, vectors will not be bold, except when they have $N$ components, that is when they are columns of a design matrix; this convention distinguishes a vector of inputs $x_i$ of dimension $D$ from the $i$th observation from the vector $\mathbf{x}_d$ of dimension $N$ consisting of all the observations on variable $X_D$. All vectors are assumed to be column vectors.\\
+% Given this notation we can loosely state the learning task as follows: given the value of an input vector $X$, make a good prediction of the output $Y$, denoted by $\hat{Y}$. Of course, we need data to construct prediction rules, often a lot of it. We thus suppose, henceforth, that we have available a set of measurements $\{(x_i, y_i)\}_{i=1}^{N}$ where $x_i$ is a $D$-dimensional vector of features for object $i$. Sometimes we will use the more explicit indexing of the design matrix: $\mathbf{X}_{i,:} = x_i^\top$ indexing. We refer to $\mathbf{X}$ set as training data; for clarity we may be more explicit with $\mathbf{X}^{(train)}$.
+% }
+
+\printnomenclature[3cm]
