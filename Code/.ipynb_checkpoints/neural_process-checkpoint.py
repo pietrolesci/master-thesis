@@ -2,122 +2,141 @@ import torch
 import numpy as np
 
 
-
-# class Swish(torch.nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.beta = torch.nn.Parameter(torch.ones(1, num_parameters))
-
-#     def forward(self, input):
-#         return input * torch.sigmoid(input * self.beta)
-
-
-
-class Encoder(torch.nn.Module):
-    def __init__(self, input_dim, encoder_specs, init_func=torch.nn.init.normal_):
-        """input_dim: dimension of x_i + dimension of y_i, for i in Context"""
-        super().__init__()        
-        self.input_dim = input_dim
+class NP(torch.nn.Module):
+    def __init__(self, x_dim, y_dim, r_dim, z_dim, encoder_specs, decoder_specs, init_func):
+        super().__init__()
+        self.x_dim = x_dim
+        self.y_dim = y_dim
+        self.r_dim = r_dim
+        self.z_dim = z_dim
         self.encoder_specs = encoder_specs
+        self.decoder_specs = decoder_specs
         self.init_func = init_func
+        self.softplus_act = torch.nn.Softplus()
+        self.r_to_z_mean = torch.nn.Linear(self.r_dim, self.z_dim)
+        self.r_to_z_logvar = torch.nn.Linear(self.r_dim, self.z_dim)
+
+        
+        # Create the encoder
         for i in range(len(self.encoder_specs)):
             if i == 0:    
-                self.add_module('h_layer' + str(i), torch.nn.Linear(self.input_dim, self.encoder_specs[i][0]))
+                encoder_input_dim = self.x_dim + self.y_dim
+                self.add_module('h_layer' + str(i), \
+                        torch.nn.Linear(encoder_input_dim, self.encoder_specs[i][0]))
+
                 if self.encoder_specs[i][1]:
                     self.add_module('h_layer' + str(i) + '_act', self.encoder_specs[i][1])
+
             else:
-                self.add_module('h_layer' + str(i), torch.nn.Linear(self.encoder_specs[i-1][0], self.encoder_specs[i][0]))
+                self.add_module('h_layer' + str(i), \
+                        torch.nn.Linear(self.encoder_specs[i-1][0], self.encoder_specs[i][0]))
+
                 if self.encoder_specs[i][1]:
                     self.add_module('h_layer' + str(i) + '_act', self.encoder_specs[i][1]) 
+
+        # Create the decoder
+        for i in range(len(self.decoder_specs)):
+            if i == 0:    
+                decoder_input_dim = self.x_dim + self.z_dim
+                self.add_module('g_layer' + str(i), \
+                    torch.nn.Linear(decoder_input_dim, self.decoder_specs[i][0]))
+
+                if self.decoder_specs[i][1]:
+                    self.add_module('g_layer' + str(i) + '_act', self.decoder_specs[i][1])
+
+            else:
+                self.add_module('g_layer' + str(i), \
+                    torch.nn.Linear(self.decoder_specs[i-1][0], self.decoder_specs[i][0]))
+
+                if self.decoder_specs[i][1]:
+                    self.add_module('g_layer' + str(i) + '_act', self.decoder_specs[i][1]) 
+        
         if init_func:
             for layer_name,_ in self._modules.items():
                 if layer_name.endswith('act') == False:
                     init_func(getattr(getattr(self, layer_name), 'weight'))
         
-    def forward(self, x, y):   
-        r_i = torch.cat([x, y], dim=1)
+
+
+    def h(self, x, y):
+        x_y = torch.cat([x, y], dim=1)
         for layer_name, layer_func in self._modules.items():
             if layer_name.startswith('h'):
-                r_i = layer_func(r_i)
-        r = r_i.mean(dim=0)
-        return r
+                x_y = layer_func(x_y)
+        return x_y
 
-    
-    
-# From r to z_mean, z_logvar
-class Zparams(torch.nn.Module):
-    def __init__(self, r_dim, z_dim):
-        super().__init__()
-        self.r_dim = r_dim
-        self.z_dim = z_dim
-        self.r_to_mean = torch.nn.Linear(self.r_dim, self.z_dim)
-        self.r_to_logvar = torch.nn.Linear(self.r_dim, self.z_dim)
-        self.softplus = torch.nn.Softplus()
 
-    def forward(self, r):
-        z_mean = self.r_to_mean(r).unsqueeze(-1)
-        z_logvar = self.softplus(self.r_to_logvar(r)).unsqueeze(-1)
-        z_std = torch.exp(0.5 * z_logvar)
-        return z_mean, z_std
-    
-    
 
-class Decoder(torch.nn.Module):
-    def __init__(self, input_dim, decoder_specs, init_func=torch.nn.init.normal_):
-        """input_dim: number of features + dimesion of z"""
-        super().__init__()
-        self.input_dim = input_dim
-        self.decoder_specs = decoder_specs
-        for i in range(len(self.decoder_specs)):
-            if i == 0:    
-                self.add_module('g_layer' + str(i), torch.nn.Linear(self.input_dim, self.decoder_specs[i][0]))
-                if self.decoder_specs[i][1]:
-                    self.add_module('g_layer' + str(i) + '_act', self.decoder_specs[i][1])
-            else:
-                self.add_module('g_layer' + str(i), torch.nn.Linear(self.decoder_specs[i-1][0], self.decoder_specs[i][0]))
-                if self.decoder_specs[i][1]:
-                    self.add_module('g_layer' + str(i) + '_act', self.decoder_specs[i][1])    
-        if init_func:
-            for layer_name,_ in self._modules.items():
-                if layer_name.endswith('act') == False:
-                    init_func(getattr(getattr(self, layer_name), 'weight'))
-        self.softplus = torch.nn.Softplus()
-    
-    def forward(self, x, z):
+    def aggregate(self, r):
+        return torch.mean(r, dim=0)
+
+
+
+    def xy_to_z_params(self, x, y):
+        r = self.h(x, y)
+        r = self.aggregate(r)
+
+        mean = self.r_to_z_mean(r)
+        logvar = self.r_to_z_logvar(r)
+
+        return mean.unsqueeze(-1), logvar.unsqueeze(-1)
+       
+
+
+    def sample_z(self, z, how_many):
+        """
+        Returns a sample from z of size (z_dim, how_many)
+        """
+        mean, logvar = z
+        std = torch.exp(0.5 * logvar)
+
+        eps = torch.randn([self.z_dim, how_many])
+        z_samples = mean + std * eps
+        return z_samples
+
+
+
+    def g(self, x, z):
         z_reshape =  z.t().unsqueeze(1).expand(-1, x.shape[0], -1)
         x_reshape = x.unsqueeze(0).expand(z_reshape.shape[0], x.shape[0], x.shape[1])
-        x_concat_z = torch.cat([x_reshape, z_reshape], dim=2)
-        y_mean = x_concat_z
+        x_z = torch.cat([x_reshape, z_reshape], dim=2)
+
+        y_mean = x_z
         for layer_name, layer_func in self._modules.items():
             if layer_name.startswith('g'):
                 y_mean = layer_func(y_mean)
 
-        y_logvar = x_concat_z
-        for layer_name, layer_func in self._modules.items():
-            if layer_name.startswith('g'):
-                y_logvar = layer_func(y_logvar)
-        y_logvar = self.softplus(y_logvar)
-        y_std = torch.exp(0.5 * y_logvar)
-        return y_mean, y_std
-    
+        return y_mean
     
 
 
-### UTILS ###
+    def forward(self, x_context, y_context, x_target, y_target):
+        z_context = self.xy_to_z_params(x_context, y_context)
+        print(self.training)
+        if self.training:
+            z_target = self.xy_to_z_params(x_target, y_target)
+        else:
+            z_target = z_context
 
-# Generate samples from z
-def sample_z(z_mean, z_std, how_many, device=None):
-    """
-    Returns a sample from z of size (z_dim, how_many)
-    """
-    z_dim = z_std.shape[0]
-    if device:
-        eps = torch.randn([z_dim, how_many]).to(device)
-    else:
-        eps = torch.randn([z_dim, how_many])
-    z_samples = z_mean + z_std * eps
-    return z_samples
+        z_sample = self.sample_z(z_target, how_many=1)
+        y_hat = self.g(x_target, z_sample)
 
+        return y_hat, z_target, z_context
+    
+    
+    
+def KL_div(mu_q, logvar_q, mu_p, logvar_p):
+    KL = (torch.exp(logvar_q) + (mu_q - mu_p) ** 2) / torch.exp(logvar_p) \
+             - 1.0 \
+             + logvar_p - logvar_q
+    KL = 0.5 * KL.sum()
+    return KL
+
+
+def ELBO(y_hat, y, z_target, z_context):
+    log_lik = torch.nn.functional.mse_loss(y_hat, y)
+    KL = KL_div(z_target[0], z_target[1], z_context[0], z_context[1])
+    return - log_lik + KL
 
 
 # Log-likelihood
@@ -154,6 +173,7 @@ def KL_div(mean_1, std_1, mean_2, std_2):
         (std_1**2/ (2*std_2**2)) + \
         ((mean_1 - mean_2)**2 / (2*std_2**2)) - 1).sum()*0.5
     return KL
+
 
 
 def predict(inputs, decoder, z_mean, z_std, how_many, numpy=True, device=None):
