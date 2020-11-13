@@ -1,5 +1,5 @@
 # Thesis
-This repository contains the files used for my thesis project: __Deep Learning: A Statistical Perspective__. I tried to convey a statistical interpretation to deep learning in general and, in particular, of [Neural Processes](https://arxiv.org/abs/1807.01622). The code implements Neural Processes using the Pytorch library.
+This repository contains the files used for my thesis project: __Deep Learning: A Statistical Perspective__. It was completed while at Bocconi University. I tried to convey a statistical interpretation to deep learning in general and, in particular, of [Neural Processes](https://arxiv.org/abs/1807.01622). The code implements Neural Processes using the Pytorch library.
 
 The folder is structured as follows:
 
